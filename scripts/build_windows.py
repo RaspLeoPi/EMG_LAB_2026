@@ -16,6 +16,12 @@ try:
 except ImportError:
     from release_common import checked_path, extract_zip, file_hash, verify_manifest, write_json
 
+try:
+    from .setup_environment import installation_environment
+except ImportError:
+    from setup_environment import installation_environment
+
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIRS = ("emg_lab", "assets", "docs", "licenses", "vendor", "drivers", "scripts")
 SOURCE_FILES = (
@@ -187,6 +193,7 @@ def build(output, inputs, *, download_wheels=True):
                     str(target / "requirements-offline.txt"),
                 ],
                 cwd=ROOT,
+                env=installation_environment(),
                 check=True,
             )
         else:

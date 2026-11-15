@@ -1,6 +1,6 @@
 """安装链平台契约：win32 全功能档、darwin 模拟开发档（ADR 0002）、win 专属依赖行环境标记。"""
 
-import importlib.util
+import importlib
 import json
 import platform
 import sys
@@ -14,10 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def load_script(name):
-    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / (name + ".py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return importlib.import_module("scripts." + name)
 
 
 @pytest.fixture

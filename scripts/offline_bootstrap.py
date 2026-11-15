@@ -15,6 +15,12 @@ try:
 except ImportError:
     from release_common import file_hash, verify_manifest, write_json
 
+try:
+    from .setup_environment import installation_environment
+except ImportError:
+    from setup_environment import installation_environment
+
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -82,7 +88,7 @@ def ensure_environment(root=ROOT, *, repair=False, runner=subprocess.run):
                 )
             shutil.rmtree(target)
         environment = dict(
-            os.environ,
+            installation_environment(),
             UV_OFFLINE="1",
             UV_PYTHON_DOWNLOADS="never",
             UV_CACHE_DIR=str(root / ".cache/uv"),

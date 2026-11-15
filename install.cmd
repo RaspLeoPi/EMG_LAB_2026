@@ -1,5 +1,13 @@
 @echo off
 setlocal
+rem Setup uses direct connections; these settings end with this installer.
+set "HTTP_PROXY="
+set "HTTPS_PROXY="
+set "ALL_PROXY="
+set "FTP_PROXY="
+set "PIP_PROXY="
+set "NO_PROXY=*"
+set "PIP_CONFIG_FILE=nul"
 cd /d "%~dp0"
 if exist "OFFLINE_RELEASE.json" (
   ".runtime\python313\tools\python.exe" scripts\offline_bootstrap.py --repair

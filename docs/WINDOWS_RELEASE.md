@@ -17,6 +17,14 @@ uv run python scripts/smoke_pipeline.py --output local/smoke
 
 On Linux, the core/backend can be developed without importing Qt or Windows SDKs. The full development dependency set includes Qt; use the project environment after installation. macOS arm64 retains the simulated-device UI path. Neither platform substitutes for Windows acceptance.
 
+## Direct Windows setup connections
+
+Windows `install.cmd` and the Python setup helpers bypass proxies for their child processes: proxy environment variables are cleared, `NO_PROXY=*` is set, and pip configuration files are disabled for installation. Runtime/uv downloads also bypass Windows Internet Settings proxies; the Python fallback downloader uses curl's explicit `--noproxy "*"`. Offline setup remains offline. These settings are process-local and do not change the user's saved proxy settings. Bare `uv sync` run separately in a terminal uses that terminal's settings.
+
+The user confirmed that the Windows UI works on 2026-11-15. This confirms UI use; complete offline-package and physical-device acceptance remain separate.
+
+After integrating collection commit `dfb5c35` into `main`, Linux verification passed 190 tests with three Windows/runtime skips, plus the four-task synthetic pipeline. Proxy bypass was checked with simulated inherited proxy settings and a Windows download opener; Windows installation/network execution was not run here.
+
 ## Build a complete offline ZIP
 
 Use a network-enabled release host after committing the reviewed source:

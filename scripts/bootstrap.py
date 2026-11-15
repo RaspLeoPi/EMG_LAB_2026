@@ -1,10 +1,15 @@
 """Create this copy's environment; prefer the bundled wheels, never copy a venv."""
 
-import os
 import platform
 import subprocess
 import sys
 from pathlib import Path
+
+try:
+    from .setup_environment import installation_environment
+except ImportError:
+    from setup_environment import installation_environment
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WIN, DARWIN = "win32", "darwin"
@@ -15,7 +20,9 @@ def run(args):
         [str(v) for v in args],
         cwd=ROOT,
         check=True,
-        env=dict(os.environ, PIP_DISABLE_PIP_VERSION_CHECK="1", PYTHONIOENCODING="utf-8"),
+        env=dict(
+            installation_environment(), PIP_DISABLE_PIP_VERSION_CHECK="1", PYTHONIOENCODING="utf-8"
+        ),
     )
 
 

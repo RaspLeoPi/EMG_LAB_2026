@@ -6,13 +6,12 @@ Run on a network-enabled release host. No fabricated/offline substitute lock is 
 import argparse
 import json
 import re
-import urllib.request
 from pathlib import Path
 
 try:
-    from .release_common import download, file_hash, write_json
+    from .release_common import download, file_hash, open_url, write_json
 except ImportError:
-    from release_common import download, file_hash, write_json
+    from release_common import download, file_hash, open_url, write_json
 
 ROOT = Path(__file__).resolve().parents[1]
 UV_VERSION = "0.11.26"
@@ -23,7 +22,7 @@ DOTNET_METADATA = "https://builds.dotnet.microsoft.com/dotnet/release-metadata/8
 
 
 def read_url(url):
-    with urllib.request.urlopen(url, timeout=90) as response:
+    with open_url(url, timeout=90) as response:
         return response.read()
 
 

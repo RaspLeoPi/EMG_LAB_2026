@@ -52,7 +52,7 @@ goto :eof
 
 :try_download
 echo 正在取回 Python %VERSION% 运行时...
-"%SystemRoot%\System32\curl.exe" -fL --retry 3 --connect-timeout 20 -o "%PKG%" "%~1"
+"%SystemRoot%\System32\curl.exe" --noproxy "*" -fL --retry 3 --connect-timeout 20 -o "%PKG%" "%~1"
 if errorlevel 1 (
     echo Source unavailable, trying next...
     goto :eof

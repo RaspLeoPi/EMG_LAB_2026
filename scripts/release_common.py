@@ -2,9 +2,19 @@
 
 import hashlib
 import json
+import sys
 import urllib.request
 import zipfile
 from pathlib import Path
+
+
+def open_url(request, *, timeout=90):
+    # An explicit empty handler also bypasses Windows Internet Settings/PAC proxies.
+    if sys.platform == "win32":
+        return urllib.request.build_opener(urllib.request.ProxyHandler({})).open(
+            request, timeout=timeout
+        )
+    return urllib.request.urlopen(request, timeout=timeout)
 
 
 def file_hash(path, algorithm="sha256"):
@@ -60,7 +70,7 @@ def download(url, target, expected=None, algorithm="sha256"):
     try:
         request = urllib.request.Request(url, headers={"User-Agent": "EMG-Lab-release-builder"})
         with (
-            urllib.request.urlopen(request, timeout=90) as response,
+            open_url(request, timeout=90) as response,
             temporary.open("wb") as output,
         ):
             while chunk := response.read(1024 * 1024):
