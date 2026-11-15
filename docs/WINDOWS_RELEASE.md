@@ -1,64 +1,65 @@
-# Windows portable release and acceptance
+# Windows installation and offline distribution
 
-The target is Windows 10 22H2 / Windows 11 x64 with an OpenGL-capable driver. This repository contains source and a genuine uv dependency lock. It does **not** currently contain a complete portable ZIP, runtime payloads or all Windows wheels. Linux Qt and rendering checks are available; they cannot establish Windows compatibility.
+Supported target: Windows 10 22H2 / Windows 11 x64, a writable installation folder and an OpenGL-capable driver. The user confirmed Windows UI operation on 2026-11-15. Native Windows installation acceptance is separate from Linux software tests.
 
-## Source development
+## 1. Offline ZIP: extract and run
 
-From this repository, with uv installed:
+Extract the complete release ZIP, then double-click `start.cmd`. No installed Python, uv, package index or network connection is needed. First launch verifies the release manifest and creates this copy's `.venv` from the bundled wheelhouse. It runs native-import and .NET checks before recording successful installation, then opens the application. Repeat launches reuse the environment.
 
-```powershell
-uv sync --locked
-uv run --locked python main.py
-uv run pytest -q
-uv run python scripts/smoke_pipeline.py --output local/smoke
-```
+The ZIP contains source, assets, SDK resources, documentation, licenses, verified Python, uv, .NET 8 and every locked Windows runtime wheel. It never contains another machine's virtual environment, personal data, logs, credentials or Git metadata.
 
-`install.cmd` retains the original verified Python 3.13.5 NuGet fallback when neither the bundled interpreter nor system Python 3.13 is available. It then obtains uv if needed and runs `uv sync --locked`. Source installation requires network access. Dependency declarations live only in `pyproject.toml` and `uv.lock`. The offline builder derives `requirements-offline.txt` from the lock for `uv pip sync`; it is a generated release artifact, not a second dependency specification.
+Run `install.cmd` to repair. Interrupted creation can be retried even if Python stopped before writing `pyvenv.cfg`; setup records ownership before creating the environment. Unknown environment folders and symlinks are rejected. Two simultaneous installers cannot modify the same environment. Relocation rebuilds the environment offline; user recordings and models are preserved.
 
-On Linux, the core/backend can be developed without importing Qt or Windows SDKs. The full development dependency set includes Qt; use the project environment after installation. macOS arm64 retains the simulated-device UI path. Neither platform substitutes for Windows acceptance.
+## 2. Clone on Windows: prepare, then run
 
-## Direct Windows setup connections
+1. Clone or download the complete repository into a writable folder.
+2. Double-click `install.cmd`. Python and uv do not need to be installed already.
+3. Wait for successful setup, then double-click `start.cmd`.
 
-Windows `install.cmd` and the Python setup helpers bypass proxies for their child processes: proxy environment variables are cleared, `NO_PROXY=*` is set, and pip configuration files are disabled for installation. Runtime/uv downloads also bypass Windows Internet Settings proxies; the Python fallback downloader uses curl's explicit `--noproxy "*"`. Offline setup remains offline. These settings are process-local and do not change the user's saved proxy settings. Bare `uv sync` run separately in a terminal uses that terminal's settings.
+The interpreter search order is bundled Python, `py -3.13`, validated PATH Python, then the pinned Python download. Candidates must be Python 3.13 x64. Wrong versions or architectures are skipped. A runtime-fetch failure stops setup immediately.
 
-The user confirmed that the Windows UI works on 2026-11-15. This confirms UI use; complete offline-package and physical-device acceptance remain separate.
+The Python bootstrap prepares pinned application-local uv and .NET 8, synchronizes `pyproject.toml` / `uv.lock`, checks package compatibility and assets, and probes native application imports. uv environments and caches stay inside the repository even if the caller has conflicting environment settings. Progress is streamed; command output and setup errors are retained in `local/setup.log`. `install.cmd --no-pause` supports automated invocation. Re-running setup repairs missing dependencies and verified runtime files.
 
-After integrating collection commit `dfb5c35` into `main`, Linux verification passed 190 tests with three Windows/runtime skips, plus the four-task synthetic pipeline. Proxy bypass was checked with simulated inherited proxy settings and a Windows download opener; Windows installation/network execution was not run here.
+All setup stages use direct connections: inherited proxy variables are removed, `NO_PROXY=*` is set, pip configuration files are disabled, Python downloads bypass Windows proxy settings, and the initial curl download uses `--noproxy "*"`. This affects child processes only and does not change saved system settings. Separately running bare `uv sync` uses the caller's terminal settings.
 
-## Build a complete offline ZIP
+## Shared runtime provenance
 
-Use a network-enabled release host after committing the reviewed source:
+`scripts/runtime.lock` is the shared runtime source for both workflows. Python remains 3.13.5 with its existing SHA256 and fallback URLs. uv remains 0.11.26; its SHA256 is obtained from the official checksum URL pinned to that exact release before downloading/extracting. .NET is pinned to 8.0.34 with Microsoft's published SHA512 from the official release metadata:
+
+[Microsoft .NET 8 release metadata](https://raw.githubusercontent.com/dotnet/core/main/release-notes/8.0/releases.json).
+
+The runtime helper verifies cached file contents before reuse, verifies archives before extraction, retains upstream archive contents/notices and records actual artifact provenance. It does not manufacture a successful artifact record when downloads fail. Future runtime upgrades must update the shared pins deliberately; source setup does not silently select the latest .NET patch.
+
+USB drivers, Cometa's system .NET Framework, device licenses and any missing Microsoft Visual C++ 2015–2022 x64 redistributable remain system prerequisites. Setup diagnoses native import failures and points to the required system components; it never installs drivers or enables physical output. The application-local .NET runtime is used by the Delsys SDK, not as a replacement for Cometa's .NET Framework.
+
+## Build the offline release
+
+On a network-enabled release host with uv:
 
 ```powershell
 uv sync --locked
 uv run python scripts/prepare_release.py --output dist/release-inputs
+# Commit all reviewed source changes before building.
 uv run python scripts/build_windows.py --inputs dist/release-inputs --output dist
 ```
 
-Preparation verifies the existing pinned Python SHA256, the upstream pinned uv release checksum, and Microsoft's .NET 8 runtime SHA512. It records the actual versions, URLs and hashes in `dist/release-inputs/release-artifacts.lock.json`. This file is generated only from downloaded payloads. It must be retained with release evidence.
+The builder requires a clean Git tree and consistent uv lock. It evaluates dependency markers for Windows AMD64 / Python 3.13.5, downloads hash-locked wheels and checks wheel compatibility and coverage. `requirements-offline.txt` is generated from `uv.lock`, not maintained independently. The actual runtime inputs are recorded in `release-artifacts.lock.json`.
 
-The builder requires a clean Git tree and an up-to-date uv lock. It exports runtime dependencies, explicitly evaluates markers for Windows AMD64 / Python 3.13.5, and downloads hash-locked binary wheels. It checks Windows wheel tags and coverage before producing a ZIP and a `.zip.sha256` file. Release identity contains the source commit. An existing ZIP is never overwritten.
+Outputs are a commit-identified ZIP and `.zip.sha256`, with every packaged file listed in `OFFLINE_RELEASE.json`. Existing ZIPs are not overwritten. To reuse downloaded wheels, place them in `dist/release-inputs/wheelhouse` and pass `--offline-inputs`; hash and coverage checks still apply. Generated releases, runtime inputs and environments stay out of Git.
 
-The ZIP contains source, documentation, assets, SDK resources, licenses, bundled Python, uv, .NET 8 and a Windows wheelhouse. It excludes personal `data/`, `local/`, credentials, Git metadata and environments. Every included file is recorded in `OFFLINE_RELEASE.json`. A pre-populated `dist/release-inputs/wheelhouse` can be reused with `--offline-inputs`; coverage and hashes are still checked.
+## Acceptance and current limitations
 
-## First launch and repair
+On each Windows target, run `acceptance.cmd --relocation-test` in both a fresh source checkout and an extracted complete ZIP.
 
-Extract the complete ZIP into a writable folder and double-click `start.cmd`. No system Python or uv is required. The bundled interpreter verifies the manifest, creates this copy's `.venv`, installs from the local wheelhouse using uv with networking disabled, and checks dependencies before writing the successful-installation marker. Subsequent starts reuse it. Interrupted setup is retried; `install.cmd` repairs the environment. A setup lock prevents concurrent installers from modifying it together.
+- Source acceptance invokes installation without requiring Python/uv and deliberately inherits unusable proxy settings to check the direct setup path.
+- Offline acceptance must run with networking disconnected. It checks first/repeat setup and then runs synthetic training/replay, both renderers, all task UI workflows and actual offline WebEngine rendering.
+- Relocation checks repeat setup in a path containing spaces and Chinese characters. Acceptance also checks coin route reachability using a software-only controller.
+- Results go to `local/windows-acceptance.json`; output explicitly identifies source/offline mode and marks hardware as `not_run`. Installation failures also retain `local/setup.log`.
 
-Moving the extracted folder invalidates its environment-location signature and rebuilds the environment offline. A folder with an unrecognized `.venv` is preserved and reported for manual renaming. Paths containing spaces and Chinese characters are part of the Windows acceptance procedure.
+This Linux workspace blocks outgoing runtime downloads, so an actual complete Windows ZIP cannot yet be built here. Fixture archives/executables are software tests only. Windows-native setup, offline first launch and WebEngine acceptance remain pending until exercised on the real release. The existing competition baseline is deliberately unchanged and needs explicit teacher refreezing after final acceptance.
 
-The bundled .NET 8 runtime is application-local. USB drivers, Cometa's system .NET Framework requirements, device licenses and physical hardware are separate prerequisites documented under `drivers/`. Launch and acceptance never install USB drivers or enable physical output automatically.
+## Implementation verification (2026-11-15)
 
-## Windows acceptance
+The full Linux regression suite passed **198 tests, with 3 platform/runtime skips**. The explicit four-task synthetic capture/training/export/replay smoke check passed, as did the native-import probe, shared-runtime/installer tests, uv lock check and relevant Ruff checks. Setup tests cover direct connections without changing inherited user settings, wrong Python architecture, verified runtime-cache reuse and repair, transport fallback, fatal digest failures, concurrent installers, incomplete environments, corrupt completion markers and preservation of unrelated environment folders.
 
-Disconnect networking, extract the actual ZIP on each target OS, then run:
-
-```bat
-acceptance.cmd --relocation-test
-```
-
-The script initializes/reuses the offline environment, runs synthetic training/replay, both renderers, robot/hand UI workflows, extended task schemes, actual offline WebEngine help rendering and coin route reachability. Help fallback is reported as incomplete acceptance. It then tests rebuilding in a relocated path containing spaces and Chinese characters. Results go to `local/windows-acceptance.json`, with per-check results and `real_hardware: not_run`. These checks can take several minutes and require a desktop/OpenGL session.
-
-Real Cometa/Delsys acquisition, DDS transport, USB hand output, disconnect/stop behavior and latency must be checked separately with the relevant hardware. Synthetic labels and geometric coin-route controllers provide software evidence only.
-
-The existing `competition_baseline.json` is deliberately unchanged. Its old hashes will reject formal entry after the refactor. A teacher must review and explicitly refreeze the finished, Windows-accepted release; historical competition results are not acceptance of this structure.
+Native Windows setup and network behavior cannot be executed in this Linux sandbox. The final archive build is attempted only after committing the reviewed source; download failures must remain explicit and never produce a placeholder ZIP.

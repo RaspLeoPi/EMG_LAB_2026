@@ -58,14 +58,14 @@ def test_first_launch_repeat_launch_and_relocation(tmp_path):
     bundle(root)
     calls = []
     ensure_environment(root, runner=fake_installer(calls))
-    assert len(calls) == 3
+    assert len(calls) == 4
     ensure_environment(root, runner=fake_installer(calls))
-    assert len(calls) == 3  # repeat launch does not reinstall
+    assert len(calls) == 4  # repeat launch does not reinstall
     moved = tmp_path / "Moved copy"
     shutil.copytree(root, moved)
     ensure_environment(moved, runner=fake_installer(calls))
-    assert len(calls) == 6
-    assert str(moved) in calls[-3][0][-1]
+    assert len(calls) == 8
+    assert str(moved) in calls[-4][0][-1]
 
 
 def test_failed_setup_is_recoverable_and_never_marked_complete(tmp_path):
@@ -165,3 +165,32 @@ def test_payload_assembly_retains_upstream_runtime_notices(tmp_path):
     assemble_payload(source, target, inputs, artifacts)
     for folder in ("python313", "uv", "dotnet"):
         assert (target / ".runtime" / folder / "LICENSE.txt").is_file()
+
+
+def test_interruption_before_venv_config_can_be_retried(tmp_path):
+    bundle(tmp_path)
+
+    def interrupted(command, **kwargs):
+        Path(command[-1]).mkdir()
+        raise RuntimeError("power loss before pyvenv.cfg")
+
+    with pytest.raises(RuntimeError):
+        ensure_environment(tmp_path, runner=interrupted)
+    ensure_environment(tmp_path, runner=fake_installer([]))
+    assert (tmp_path / ".venv/emg-lab-environment.json").is_file()
+    assert not (tmp_path / "local/offline-install-owner.json").exists()
+
+
+def test_corrupt_install_marker_is_rebuilt_but_unknown_environment_is_preserved(tmp_path):
+    bundle(tmp_path)
+    ensure_environment(tmp_path, runner=fake_installer([]))
+    (tmp_path / ".venv/emg-lab-environment.json").write_text("broken")
+    calls = []
+    ensure_environment(tmp_path, runner=fake_installer(calls))
+    assert len(calls) == 4
+    shutil.rmtree(tmp_path / ".venv")
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / ".venv/personal.txt").write_text("keep")
+    with pytest.raises(ValueError, match="recognized"):
+        ensure_environment(tmp_path, runner=fake_installer([]))
+    assert (tmp_path / ".venv/personal.txt").read_text() == "keep"

@@ -27,16 +27,29 @@ def test_windows_setup_sanitizes_proxy_variants_without_mutating_source():
 
 def test_bootstrap_passes_direct_environment_to_installer(monkeypatch):
     monkeypatch.setenv("HTTPS_PROXY", "http://unreachable")
+    monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", "outside-the-repo")
     monkeypatch.setattr(bootstrap.sys, "platform", "win32")
     calls = []
-    monkeypatch.setattr(
-        bootstrap.subprocess, "run", lambda command, **kwargs: calls.append((command, kwargs))
-    )
+
+    class Process:
+        stdout = iter(["installed\n"])
+
+        def wait(self):
+            return 0
+
+    def popen(command, **kwargs):
+        calls.append((command, kwargs))
+        return Process()
+
+    monkeypatch.setattr(bootstrap.subprocess, "Popen", popen)
     bootstrap.run(["uv", "sync", "--locked"])
     assert calls[0][0] == ["uv", "sync", "--locked"]
     assert "HTTPS_PROXY" not in calls[0][1]["env"]
     assert calls[0][1]["env"]["NO_PROXY"] == "*"
     assert os.environ["HTTPS_PROXY"] == "http://unreachable"
+    assert calls[0][1]["env"]["UV_PROJECT_ENVIRONMENT"] == str(bootstrap.ROOT / ".venv")
+    assert calls[0][1]["env"]["UV_PYTHON_DOWNLOADS"] == "never"
+    assert os.environ["UV_PROJECT_ENVIRONMENT"] == "outside-the-repo"
 
 
 def test_windows_runtime_downloads_bypass_registry_proxy(monkeypatch):

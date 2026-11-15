@@ -8,16 +8,18 @@
 
 离线发行包完整解压后双击 `start.cmd`，首次启动自动使用随包 Python、uv 和锁定 wheel 建立本目录的 `.venv`，无需联网。安装中断可重试，修复可运行 `install.cmd`。移动文件夹后会重新建立环境；不要复制其他电脑的 `.venv`。
 
-当前 Git 仓库是源码，不包含运行时与 wheelhouse。开发时安装 uv 后运行：
+Windows 从 Git 克隆后，即使没有 Python 或 uv，也可双击 `install.cmd`：安装器会检查 Python 3.13 x64，必要时取回经校验的 Python，并准备项目内的 uv、.NET 8 和锁定依赖。准备过程使用直连，不使用代理；完成后双击 `start.cmd`。已有组件会复用，失败后可重跑，日志位于 `local/setup.log`。USB 驱动、系统 Visual C++/.NET Framework 与设备许可见 `drivers/README.md`，不会自动以管理员身份安装。
+
+开发者也可自行运行：
 
 ```powershell
 uv sync --locked
 uv run --locked python main.py
 ```
 
-Windows 源码安装也可运行 `install.cmd`：缺少 Python 3.13 时保留原有按 SHA256 验证的 NuGet 3.13.5 获取链，再使用 uv 同步锁定依赖。目标是 Windows 10 22H2 / Windows 11 x64，3D 需要 OpenGL；本次 Linux 工作区尚未完成 Windows GUI 验收。
+目标为 Windows 10 22H2 / Windows 11 x64，需要 OpenGL 显卡驱动。用户已确认 Windows UI 可用；两个完整安装流程仍需在原生 Windows 上按验收脚本检查。
 
-[重构报告](docs/RESTRUCTURE_REPORT.md)记录架构与当前验证范围，[离线发行与验收](docs/WINDOWS_RELEASE.md)说明如何生成真正包含运行依赖的 ZIP。当前尚未下载运行时与全部 Windows wheel，因此本次没有生成可分发 ZIP。
+[离线发行与验收](docs/WINDOWS_RELEASE.md)记录 ZIP 构建、直连安装及验收方法，[重构报告](docs/RESTRUCTURE_REPORT.md)记录架构。源码不包含运行时或 wheelhouse；当前工作区网络阻止下载，尚未生成完整离线 ZIP。
 
 ## 课堂功能
 

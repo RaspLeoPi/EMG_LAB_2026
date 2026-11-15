@@ -4,3 +4,12 @@ version=3.13.5
 sha256=fc496ae8aa3f7318704e24c4885c0cc0e3e6060c6e8af28aaa266226c01d96a1
 url=https://api.nuget.org/v3-flatcontainer/python/3.13.5/python.3.13.5.nupkg
 url=https://github.com/FAST-CERN/EMG_LAB/releases/download/runtime/python-3.13.5.nupkg
+
+# Application-local runtime pins; official checksums verified before extraction.
+uv_version=0.11.26
+uv_url=https://github.com/astral-sh/uv/releases/download/0.11.26/uv-x86_64-pc-windows-msvc.zip
+uv_sha256_url=https://github.com/astral-sh/uv/releases/download/0.11.26/uv-x86_64-pc-windows-msvc.zip.sha256
+dotnet_version=8.0.34
+dotnet_url=https://builds.dotnet.microsoft.com/dotnet/Runtime/8.0.34/dotnet-runtime-8.0.34-win-x64.zip
+dotnet_sha512=d86d165a29dcdb71df23dd150a3fc5db6386fa55da5cb18c0c22889a0dab5071a3a2d852572e6cebfecf12b489870ac76243ae35665a746ed5b1011e7c68979d
+# .NET metadata: https://raw.githubusercontent.com/dotnet/core/main/release-notes/8.0/releases.json

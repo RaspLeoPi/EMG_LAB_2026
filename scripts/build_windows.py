@@ -18,8 +18,10 @@ except ImportError:
 
 try:
     from .setup_environment import installation_environment
+    from .windows_runtime import runtime_specs
 except ImportError:
     from setup_environment import installation_environment
+    from windows_runtime import runtime_specs
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,7 +56,7 @@ def windows_requirements(exported):
         platform_machine="AMD64",
         os_name="nt",
         python_version="3.13",
-        python_full_version="3.13.5",
+        python_full_version=runtime_specs(ROOT)["python"]["version"],
         extra="",
     )
     logical = []
@@ -180,7 +182,7 @@ def build(output, inputs, *, download_wheels=True):
                     "--platform",
                     "win_amd64",
                     "--python-version",
-                    "313",
+                    runtime_specs(ROOT)["python"]["version"],
                     "--implementation",
                     "cp",
                     "--abi",

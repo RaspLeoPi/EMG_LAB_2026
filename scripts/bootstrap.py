@@ -1,14 +1,22 @@
 """Create this copy's environment; prefer the bundled wheels, never copy a venv."""
 
 import platform
+import shutil
+import struct
 import subprocess
 import sys
 from pathlib import Path
 
 try:
-    from .setup_environment import installation_environment
+    from .offline_bootstrap import setup_lock
+    from .release_common import file_hash, write_json
+    from .setup_environment import application_environment, installation_environment
+    from .windows_runtime import ensure_runtime
 except ImportError:
-    from setup_environment import installation_environment
+    from offline_bootstrap import setup_lock
+    from release_common import file_hash, write_json
+    from setup_environment import application_environment, installation_environment
+    from windows_runtime import ensure_runtime
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,14 +24,35 @@ WIN, DARWIN = "win32", "darwin"
 
 
 def run(args):
-    subprocess.run(
-        [str(v) for v in args],
-        cwd=ROOT,
-        check=True,
-        env=dict(
-            installation_environment(), PIP_DISABLE_PIP_VERSION_CHECK="1", PYTHONIOENCODING="utf-8"
-        ),
-    )
+    command = [str(value) for value in args]
+    logs = ROOT / "local"
+    logs.mkdir(parents=True, exist_ok=True)
+    with (logs / "setup.log").open("a", encoding="utf-8") as log:
+        log.write("Running: " + " ".join(command) + "\n")
+        process = subprocess.Popen(
+            command,
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=dict(
+                application_environment(ROOT, installation_environment()),
+                PIP_DISABLE_PIP_VERSION_CHECK="1",
+                PYTHONIOENCODING="utf-8",
+                UV_PROJECT_ENVIRONMENT=str(ROOT / ".venv"),
+                UV_CACHE_DIR=str(ROOT / ".cache/uv"),
+                UV_PYTHON_DOWNLOADS="never",
+            ),
+        )
+        for line in process.stdout:
+            print(line, end="", flush=True)
+            log.write(line)
+            log.flush()
+        code = process.wait()
+        if code:
+            raise subprocess.CalledProcessError(code, command)
 
 
 def gate():
@@ -32,6 +61,8 @@ def gate():
     if platform_name == WIN:
         if version != (3, 13):
             raise RuntimeError("本发行包适用于 Windows x64 / Python 3.13。请使用随包 install.cmd。")
+        if struct.calcsize("P") != 8 or machine.lower() not in ("amd64", "x86_64"):
+            raise RuntimeError("Windows x64 Python is required; use install.cmd.")
         return
     if platform_name == DARWIN:
         if version != (3, 13):
@@ -59,35 +90,35 @@ def venv_python(target, platform_name):
 
 
 def find_uv():
-    """Use installed uv, or fetch the verified pinned Windows executable locally."""
-    import shutil
-
+    if sys.platform == WIN:
+        return ensure_runtime("uv", ROOT)
     installed = shutil.which("uv")
     if installed:
         return Path(installed)
-    bundled = ROOT / ".runtime/uv/uv.exe"
-    if bundled.is_file():
-        return bundled
-    if sys.platform != WIN:
-        raise RuntimeError("Install uv, then run uv sync --locked from this repository.")
-    import re
-    import tempfile
+    raise RuntimeError("Install uv, then run uv sync --locked from this repository.")
 
-    from prepare_release import UV_URL, UV_VERSION, read_url
-    from release_common import download, extract_zip
 
-    checksum = read_url(UV_URL + ".sha256").decode().split()[0].lower()
-    if not re.fullmatch("[0-9a-f]{64}", checksum):
-        raise ValueError("Invalid upstream uv checksum.")
-    archive = download(UV_URL, ROOT / ".runtime" / f"uv-{UV_VERSION}.zip", checksum)
-    with tempfile.TemporaryDirectory(dir=ROOT / ".runtime") as temporary:
-        extract_zip(archive, temporary)
-        candidates = list(Path(temporary).rglob("uv.exe"))
-        if len(candidates) != 1:
-            raise ValueError("Expected exactly one uv.exe.")
-        bundled.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(candidates[0], bundled)
-    return bundled
+def prepare_source():
+    if not (ROOT / "uv.lock").is_file():
+        raise RuntimeError("Missing uv.lock. Restore the complete source repository.")
+    with setup_lock(ROOT):
+        state = ROOT / "local/source-setup.json"
+        state.unlink(missing_ok=True)
+        if sys.platform == WIN:
+            ensure_runtime("dotnet", ROOT)
+        uv = find_uv()
+        print("Synchronizing locked packages using direct connections...", flush=True)
+        run([uv, "sync", "--locked", "--python", sys.executable])
+        python = venv_python(ROOT / ".venv", sys.platform)
+        run([uv, "pip", "check", "--python", python])
+        run([python, "scripts/download_robot_assets.py", "--check"])
+        run([python, "scripts/check_hand_assets.py"])
+        run([python, "scripts/check_installation.py"])
+        write_json(
+            state,
+            dict(location=str(ROOT.resolve()), dependency_lock_sha256=file_hash(ROOT / "uv.lock")),
+        )
+        return python
 
 
 def main():
@@ -95,17 +126,14 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
     gate()
     if (ROOT / "OFFLINE_RELEASE.json").is_file():
-        from offline_bootstrap import ensure_environment
-
+        try:
+            from .offline_bootstrap import ensure_environment
+        except ImportError:
+            from offline_bootstrap import ensure_environment
         python = ensure_environment(ROOT, repair=True)
+        run([python, "scripts/check_installation.py"])
     else:
-        if not (ROOT / "uv.lock").is_file():
-            raise RuntimeError("Missing uv.lock. Restore the complete source repository.")
-        # Both source installation and the portable package use uv, never pip into a reference runtime.
-        run([find_uv(), "sync", "--locked", "--python", sys.executable])
-        python = venv_python(ROOT / ".venv", sys.platform)
-    run([python, "scripts/download_robot_assets.py", "--check"])
-    run([python, "scripts/check_hand_assets.py"])
+        prepare_source()
     print(
         "安装完成。双击 start.cmd 开始使用；无需连接设备。"
         if sys.platform == WIN
@@ -119,4 +147,10 @@ if __name__ == "__main__":
         main()
     except Exception as error:
         print("安装未完成：" + str(error), flush=True)
+        try:
+            (ROOT / "local").mkdir(parents=True, exist_ok=True)
+            with (ROOT / "local/setup.log").open("a", encoding="utf-8") as log:
+                log.write("Setup failed: " + str(error) + "\n")
+        except OSError:
+            pass
         raise SystemExit(1)

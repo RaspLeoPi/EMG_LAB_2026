@@ -16,9 +16,9 @@ except ImportError:
     from release_common import file_hash, verify_manifest, write_json
 
 try:
-    from .setup_environment import installation_environment
+    from .setup_environment import application_environment, installation_environment
 except ImportError:
-    from setup_environment import installation_environment
+    from setup_environment import application_environment, installation_environment
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,11 +37,21 @@ def setup_lock(root):
                 handle.write(b"0")
                 handle.flush()
             handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError as error:
+                raise RuntimeError(
+                    "Another setup is already running. Wait for it to finish."
+                ) from error
         else:
             import fcntl
 
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as error:
+                raise RuntimeError(
+                    "Another setup is already running. Wait for it to finish."
+                ) from error
         try:
             yield
         finally:
@@ -71,24 +81,37 @@ def ensure_environment(root=ROOT, *, repair=False, runner=subprocess.run):
     target = root / ".venv"
     python = target / "Scripts/python.exe"
     state = target / "emg-lab-environment.json"
+    owner = root / "local/offline-install-owner.json"
     with setup_lock(root):
+        if target.is_symlink():
+            raise ValueError("Virtual environment may not be a symlink.")
         if not repair and state.is_file() and python.is_file():
-            if json.loads(state.read_text()).get("signature") == signature:
-                return python
+            try:
+                if json.loads(state.read_text(encoding="utf-8")).get("signature") == signature:
+                    return python
+            except (ValueError, OSError):
+                pass
         print("Verifying offline release files...", flush=True)
         verify_manifest(root, manifest)
         bundled_python = root / ".runtime/python313/tools/python.exe"
         uv = root / ".runtime/uv/uv.exe"
         if not bundled_python.is_file() or not uv.is_file():
             raise FileNotFoundError("Bundled Python/uv is missing.")
+        owned = False
+        if owner.is_file():
+            try:
+                owned = json.loads(owner.read_text(encoding="utf-8")).get("target") == str(target)
+            except (ValueError, OSError):
+                pass
         if target.exists():
-            if target.is_symlink() or not (target / "pyvenv.cfg").is_file():
+            if not owned and not (target / "pyvenv.cfg").is_file():
                 raise ValueError(
                     "Existing .venv is not a recognized virtual environment. Rename it before repair."
                 )
             shutil.rmtree(target)
+        write_json(owner, dict(target=str(target)))
         environment = dict(
-            installation_environment(),
+            application_environment(root, installation_environment()),
             UV_OFFLINE="1",
             UV_PYTHON_DOWNLOADS="never",
             UV_CACHE_DIR=str(root / ".cache/uv"),
@@ -132,8 +155,15 @@ def ensure_environment(root=ROOT, *, repair=False, runner=subprocess.run):
             env=environment,
             check=True,
         )
+        runner(
+            [str(python), str(root / "scripts/check_installation.py")],
+            cwd=root,
+            env=environment,
+            check=True,
+        )
         # Write the marker only after all dependencies and their requirements pass.
         write_json(state, dict(signature=signature, location=str(root)))
+        owner.unlink(missing_ok=True)
         return python
 
 
