@@ -50,6 +50,8 @@ def record_label(meta):
         if meta.get("schema_version", 1) >= 2
         else f"数据 {meta.get('round', 1)}"
     )
+    if meta.get("task_type") == "EMG_FOREARM_CAPTURE_V1":
+        trials = f"{meta.get('completed_trials', 0)} 次动作"
     suffix = (
         "" if meta.get("complete") else " [提前结束]" if usable_record(meta) else " [动作未采全]"
     )

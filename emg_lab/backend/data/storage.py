@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
 import struct
@@ -87,7 +88,7 @@ class RecordingWriter:
         self.handle = (self.folder / "emg.bin").open("wb")
         self.handle.write(b"\0" * HEADER.size)
         self.started = datetime.now().astimezone()
-        self.meta["created_at"] = self.started.isoformat()
+        self.meta["created_at"] = self.meta.get("batch_started_at", self.started.isoformat())
         self._header()
         write_json(self.folder / "meta.json", self.meta)
 
@@ -140,17 +141,20 @@ class RecordingWriter:
             complete=bool(complete),
             finalized=True,
             labels=len(labels),
-            created_at=self.started.isoformat(),
+            created_at=self.meta.get("batch_started_at", self.started.isoformat()),
         )
         if self.meta["schema_version"] >= 2:
             trials = {r["trial"] for r in labels}
             required = set(range(len(task_from_metadata(self.meta).classes)))
+            forearm = self.meta.get("task_type") == "EMG_FOREARM_CAPTURE_V1"
             self.meta["completed_trials"] = sum(
-                {r["class_id"] for r in labels if r["trial"] == t} == required for t in trials
+                forearm or {r["class_id"] for r in labels if r["trial"] == t} == required
+                for t in trials
             )
             rejected = excluded_trials(self.meta)
             self.meta["usable_trials"] = sum(
-                t not in rejected and {r["class_id"] for r in labels if r["trial"] == t} == required
+                t not in rejected
+                and (forearm or {r["class_id"] for r in labels if r["trial"] == t} == required)
                 for t in trials
             )
         write_json(self.folder / "meta.json", self.meta)
@@ -219,7 +223,17 @@ def read_recording(folder):
     if meta.get("capture_only"):
         from emg_lab.contracts.acquisition import validate_recording_annotations
 
-        validate_recording_annotations(meta, labels)
+        if meta.get("task_type") == "EMG_FOREARM_CAPTURE_V1":
+            from emg_lab.contracts.forearm import validate_recording
+
+            validate_recording(meta, labels)
+            if (
+                meta.get("migration")
+                and hashlib.sha256(raw).hexdigest() != meta["migration"]["source_emg_bin_sha256"]
+            ):
+                raise ValueError("迁移原始信号与来源哈希不一致。")
+        else:
+            validate_recording_annotations(meta, labels)
     ordered = sorted(labels, key=lambda r: r["start_sample"])
     if any(a["end_sample"] > b["start_sample"] for a, b in zip(ordered, ordered[1:])):
         raise ValueError("数据中的动作标签有重叠，请重新选择数据。")

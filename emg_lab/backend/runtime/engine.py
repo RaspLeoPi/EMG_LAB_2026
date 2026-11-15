@@ -103,12 +103,20 @@ class Session:
         random_order=False,
         collection_notes=None,
         capture_plan=None,
+        protocol_plan=None,
     ):
         with self.lock:
             if not self.profile or self.inference or self.capture:
                 raise ValueError("请先连接设备，并停止当前任务。")
             if time.monotonic() - self.last_frame > 1.0 or not len(self.raw):
                 raise ValueError("尚未收到设备数据，请检查设备。")
+            if protocol_plan is not None:
+                from emg_lab.backend.data.forearm import ForearmCaptureRun
+
+                self.capture = ForearmCaptureRun(
+                    self.root, self.profile, protocol_plan, self.config
+                )
+                return self.capture.run_path
             self.capture = CaptureRun(
                 self.root,
                 group,

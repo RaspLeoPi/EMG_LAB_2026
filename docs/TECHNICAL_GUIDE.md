@@ -113,11 +113,13 @@ EMG_LAB_2026/
 
 缺少目标字段的旧数据按机器人四分类解释。提供了 `classes` 时，顺序必须完全一致。`require_task` 用于导入、训练和回放边界，避免把左转解释成张开。
 
-默认 `prepare_s=3`、`action_s=5`、`rest_s=0`、`trial_count=5`。每个动作的标签从准备结束的采样点开始，采用 `[start_sample,end_sample)` 半开区间，不能按屏幕刷新时间计算。
+旧课程任务默认 `prepare_s=3`、`action_s=5`、`rest_s=0`、`trial_count=5`。当前前臂协议改用可配置动作间隔，具体见冻结数据规范。每个动作的标签从准备结束的采样点开始，采用 `[start_sample,end_sample)` 半开区间，不能按屏幕刷新时间计算。
 
 对于 1000 Hz、每段准备 3 秒和动作 5 秒，第一段动作标签是 `[3000,8000)`。准备阶段信号仍保存，但不当作这段动作的训练标签。停止/放松本身也是一个有完整标签的类别。
 
 ## 5 数据结构和二进制格式
+
+当前前臂数据以 [DATA_FORMAT_V1.md](DATA_FORMAT_V1.md) 为冻结规范（schema 3 / EMG_FOREARM_CAPTURE_V1）。[数据包说明](../data/README.md)和[独立分析 notebook](../data/example_analysis.ipynb)可随 data 文件夹分发。下述通用容器也兼容旧课堂任务；trial 语义必须结合 task_type/schema 判断。
 
 新录制的 `.emg` 是 ZIP 容器，包含：
 
@@ -151,23 +153,23 @@ trial,start_sample,end_sample,class_id,class_name
 1,9000,12000,0,rest
 ```
 
-上例只演示前两条标签。现代 schema 中，同一组内的所有类别共用一个 trial 编号。
+上例演示 schema 2 的机器人方向任务：一整组类别共用 trial 编号。当前 schema 3 前臂协议每个 trial 是一个动作；round_index 表示一轮。前臂动作固定为 rest/fist/wrist_flexion/wrist_extension，不能使用上例的 forward 作为前臂标签。
 
 主要元数据字段：
 
 | 字段 | 用途 |
 | --- | --- |
-| schema_version / signal_type | 新录制数据为 2 / emg |
+| schema_version / signal_type | 当前前臂为 3 / emg；旧课堂任务仍为 2 / emg |
 | record_id / name / group / created_at | 唯一标识、展示名称、组别、创建时间 |
 | target / task_type / classes | 实验目标与有序类别 |
 | device / sampling_rate / channel_ids / unit | 信号配置 |
 | preprocessing | 滤波与滑窗配置 |
 | samples / duration / labels | 点数、时长、标签数 |
-| trial_count / completed_trials | 计划组数与已经完整采集的组数 |
+| trial_count / completed_trials | 前臂：计划/完成的单次动作数；旧课堂任务：动作组数 |
 | complete / finalized | 是否按计划完成、是否已完成文件保存 |
 | action_order / action_seconds / prepare_seconds / rest_seconds | 动作顺序和时长 |
 
-`complete=False` 不一定无法训练：提前结束但 `finalized=True` 且至少一组完整的 schema 2 数据仍可训练。训练会排除不完整 trial。
+`complete=False` 不一定无法训练：提前结束但 `finalized=True` 且至少一组完整的 schema 2 数据仍可训练。训练会排除不完整 trial。前臂采集及迁移数据仍为 capture_only=true，当前应用不直接训练；分析示例只演示防泄漏划分与特征准备。
 
 旧版目录包含 `emg.bin`、`meta.json` 和 `labels.csv`。它的 trial 往往表示单个动作；训练把整个旧文件当作不可拆分单元。新导入会把这三个文件装入 `.emg`，保留旧 schema 和标签含义。
 
@@ -454,7 +456,7 @@ uv run pytest -q tests/test_transfer.py tests/test_student_features.py
 
 `Task.key` 表示目标种类 robot/hand，`Task.selector` 表示分类方案选择键。元数据匹配以 `task_type + classes` 为准，不能仅比较目标种类。数据管理用途跳转与训练合并均遵守该规则。模型输出维度来自类别表。
 
-**采集。** `CaptureRun` 默认保留原有固定顺序，新增 `random_order=True` 可按完整 trial 独立打乱。元数据包含实际顺序、随机种子与原有逐段标签。信号仍保存为原始 float32，提示标签按样本时钟建立。真实受试者是否按提示完成动作需人工检查；`collection_notes` 保存选填的操作者代号、佩戴轮次、通道位置和动作映射；默认值按组别与任务保存在 `data/.capture_notes.json`。
+**旧课程采集。** `CaptureRun` 默认保留原有固定顺序，新增 `random_order=True` 可按完整 trial 独立打乱。元数据包含实际顺序、随机种子与原有逐段标签。信号仍保存为原始 float32，提示标签按样本时钟建立。真实受试者是否按提示完成动作需人工检查；`collection_notes` 保存选填的操作者代号、佩戴轮次、通道位置和动作映射；默认值按组别与任务保存在 `data/.capture_notes.json`。
 
 **机器人。** `physics/commands.py` 添加后退与左右侧移，目标速度分别为 -0.4 m/s 与侧向 ±0.4 m/s。`Simulation` 对平移指令保持方向角，原有预训练行走/平衡策略接收速度目标。七类在准备阶段均显示中文与倒计时，动作阶段均显示文字和地面符号。后退、侧移复用前进直箭头并按机身方向旋转，转向保留弯箭头；文字贴图由 `scripts/build_cue_textures.py` 生成。该扩展只启用 MuJoCo；原 DDS 四类接口未扩展。
 
@@ -471,7 +473,7 @@ uv run pytest -q tests/test_transfer.py tests/test_student_features.py
 
 `collection.py` 提供简短采集记录与信号状态提示。超过 1 秒没有新帧，或最近 2 秒原始通道极差为零时提示检查设备；不按振幅判定健康，不自动删除数据。
 
-采集中 `CaptureRun.reject_trial()` 写入 `meta.json.rejected_trials`，格式为 `[{"trial": 2, "reason": "动作做错"}]`。`completed_trials` 仍表示完整采集组数，`usable_trials` 表示其中未被标记的组数；原始信号与标签不改写。训练先按整组排除，再划分训练/验证/测试。旧数据缺少此字段时按原规则读取。回放仍播放原始信号，基础评估仅计未被排除的动作段。
+旧课堂任务采集中 `CaptureRun.reject_trial()` 写入 `meta.json.rejected_trials`，格式为 `[{"trial": 2, "reason": "动作做错"}]`。`completed_trials` 仍表示完整采集组数，`usable_trials` 表示其中未被标记的组数；原始信号与标签不改写。训练先按整组排除，再划分训练/验证/测试。旧数据缺少此字段时按原规则读取。回放仍播放原始信号，基础评估仅计未被排除的动作段。
 
 `practice.py` 的报告版本为 2。停止误动作比例是停止标签段内非停止指令窗口数除以有效窗口数；连续错误运动开始或错误指令改变记一次事件。每段的 `switches` 为相邻有效指令变化次数，`first_correct_seconds` 为从动作提示开始到首次正确有效窗口末端的秒数；`longest_correct_seconds` 为连续正确结果首末时刻的跨度，单个结果跨度为零。这些指标衡量解码指令，不能替代实际位置或力的测量。
 

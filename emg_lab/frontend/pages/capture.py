@@ -34,22 +34,18 @@ class CapturePage:
         self.task_choice.currentIndexChanged.connect(
             lambda: self.guard(lambda: self.choose_task(self.task_choice))
         )
-        self.capture_mode = W.QComboBox()
-        self.capture_mode.addItem("课程预设采集（四类 / 七类）", "standard")
-        self.capture_mode.addItem("自定义动作采集（不关联机器人）", "custom")
-        self.capture_mode.currentIndexChanged.connect(self.update_capture_mode)
-        settings.addLayout(fields(("采集方式", self.capture_mode)))
         self.preset_task_field = fields(("任务方案", self.task_choice))
         settings.addLayout(self.preset_task_field)
-        self.preset_hint = text_label(
-            "课程预设保留原有训练与控制流程；自定义采集可自由添加动作、力道与备注，稍后再研究映射。"
-        )
-        settings.addWidget(self.preset_hint)
         self.group = W.QLineEdit("G01")
         self.group.setMaxLength(40)
         self.experiment = W.QLineEdit("方向控制练习")
         self.experiment.setMaxLength(60)
-        settings.addLayout(fields(("组别 / 学号", self.group), ("数据名称", self.experiment)))
+        self.subject_fields = fields(("受试者名称", self.group))
+        settings.addLayout(self.subject_fields)
+        self.experiment_fields = fields(("数据名称", self.experiment))
+        settings.addLayout(self.experiment_fields)
+        self.group.clear()
+        self.group.setMaxLength(64)
         self.group.textChanged.connect(self.name_preview)
         self.experiment.textChanged.connect(self.name_preview)
         self.trial_count = W.QSpinBox()
@@ -80,12 +76,12 @@ class CapturePage:
         )
         self.legacy_notes_panel.setLayout(legacy_notes_layout)
         settings.addWidget(self.legacy_notes_panel)
-        from emg_lab.frontend.custom_capture import CustomCaptureEditor
+        from emg_lab.frontend.forearm_capture import ForearmCaptureEditor
 
-        self.custom_capture = CustomCaptureEditor(self)
-        self.custom_capture.changed.connect(self.update_capture_plan)
-        settings.addWidget(self.custom_capture)
-        self.custom_capture.setVisible(False)
+        self.forearm_capture = ForearmCaptureEditor(self)
+        self.forearm_capture.changed.connect(self.update_capture_plan)
+        settings.addWidget(self.forearm_capture)
+        self.forearm_capture.setVisible(False)
         self.capture_plan = text_label("")
         settings.addWidget(self.capture_plan)
         self.trial_count.valueChanged.connect(self.update_capture_plan)
@@ -139,22 +135,41 @@ class CapturePage:
         self.update_capture_plan()
 
     def capture_next_step(self):
-        if self.custom_capture_active():
+        if self.forearm_capture_active():
             self.open_library("recording")
         else:
             self.refresh_data()
             self.tabs.setCurrentIndex(2)
 
-    def custom_capture_active(self):
-        return self.task.key == "robot" and self.capture_mode.currentData() == "custom"
+    def forearm_capture_active(self):
+        return self.task.key == "robot"
 
     def update_capture_mode(self):
-        if not hasattr(self, "custom_capture"):
+        if not hasattr(self, "forearm_capture"):
             return
-        custom = self.custom_capture_active()
-        self.capture_mode.setVisible(self.task.key == "robot")
-        self.custom_capture.setVisible(custom)
-        self.page_titles["02  采集数据"].setText("自定义动作采集" if custom else "跟随提示，采集动作数据")
+        custom = self.forearm_capture_active()
+        for index in range(self.experiment_fields.count()):
+            widget = self.experiment_fields.itemAt(index).widget()
+            if widget:
+                widget.setVisible(not custom)
+        self.subject_fields.itemAt(0).widget().findChild(W.QLabel).setText(
+            "受试者名称" if custom else "组别 / 学号"
+        )
+        self.trial_count.setSuffix(" 次 / 动作" if custom else " 组")
+        self.action_seconds.setMaximum(120 if custom else 10)
+        self.reject_trial_button.setText("标记本次动作无效" if custom else "标记本组无效")
+        self.reject_trial_button.setToolTip(
+            "保留原始信号，标记当前动作。" if custom else "标记当前整组动作。"
+        )
+        self.page_hints["02  采集数据"].setText(
+            "填写受试者与通道位置，选择动作并跟随提示。静息动作与动作间隔分别记录。"
+            if custom
+            else "跟随提示完成当前任务动作。"
+        )
+        self.forearm_capture.setVisible(custom)
+        self.page_titles["02  采集数据"].setText(
+            "前臂肌电采集" if custom else "跟随提示，采集动作数据"
+        )
         self.capture_next.setText("查看采集数据 →" if custom else "下一步：训练模型 →")
         self.scene_check.setVisible(not custom)
         self.legacy_notes_panel.setVisible(not custom)
@@ -165,7 +180,7 @@ class CapturePage:
             if widget:
                 widget.setVisible(not custom)
         if custom and self.backend.profile:
-            self.custom_capture.sync_channels()
+            self.forearm_capture.sync_channels()
         self.name_preview()
         self.update_capture_plan()
         self.update_controls()
@@ -175,26 +190,39 @@ class CapturePage:
         if not hasattr(self, "capture_plan"):
             return
         actions = (
-            len(self.custom_capture.selected_ids())
-            if self.custom_capture_active()
+            len(self.forearm_capture.selected_ids())
+            if self.forearm_capture_active()
             else len(self.task.classes)
         )
+        if self.forearm_capture_active():
+            n = count * actions
+            seconds = round(
+                3
+                + n * self.action_seconds.value()
+                + max(0, n - 1) * self.forearm_capture.interval.value()
+            )
+            self.capture_plan.setText(
+                f"本批 {count} 轮、{n} 次动作，预计 {seconds:g} 秒。初始准备 3 秒；间隔包含倒计时；末次动作后结束。"
+            )
+            return
         seconds = round(
             count * actions * (self.action_seconds.value() + PREPARE_SECONDS + REST_SECONDS)
         )
-        duration = f"{seconds // 60} 分 {seconds % 60} 秒" if seconds >= 60 else f"{seconds} 秒"
-        self.capture_plan.setText(
-            f"本次共 {count} 组、{count * actions} 个动作，预计 {duration}。每个动作前准备 {PREPARE_SECONDS:g} 秒，完成后直接进入下一个动作的准备。"
-        )
+        self.capture_plan.setText(f"本次 {count} 组、{count * actions} 个动作，预计 {seconds} 秒。")
 
     def name_preview(self):
+        if self.forearm_capture_active():
+            self.path_preview.setText(
+                "保存为：<受试者>_<批次开始时间（含微秒）>.emg，另附同名 .index.csv。"
+            )
+            return
         try:
             group, title = safe_name(self.group.text()), safe_name(self.experiment.text())
             self.path_preview.setText(
                 f"将保存为一份“{title}”数据，归入 {group}。时间和文件编号自动添加。"
                 + (
                     " 自定义采集同时生成同名 .index.csv；动作名称与备注保存在原始文件内。"
-                    if self.custom_capture_active()
+                    if self.forearm_capture_active()
                     else ""
                 )
             )

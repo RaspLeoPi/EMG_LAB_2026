@@ -3,7 +3,9 @@
 wheelhouse/
 __pycache__/
 .pytest_cache/
-/data/
+/data/*
+!/data/README.md
+!/data/example_analysis.ipynb
 /local/
 /.cache/
 /.ruff_cache/

@@ -26,6 +26,7 @@ def main():
         w.resize(1160, 940)
         w.show()
         w.select_task("hand")
+        w.group.setText("SYNTHETIC")
 
         def until(predicate, seconds=15):
             deadline = time.monotonic() + seconds

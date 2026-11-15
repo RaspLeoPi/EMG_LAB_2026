@@ -16,6 +16,8 @@ class Task:
     def selector(self):
         from .acquisition import CUSTOM_CAPTURE
 
+        if self.task_type == "EMG_FOREARM_CAPTURE_V1":
+            return "forearm_capture"
         if self.task_type == CUSTOM_CAPTURE:
             return "custom_capture"
         return next(k for k, v in TASKS.items() if v == self)
@@ -74,6 +76,17 @@ def task_from_metadata(meta):
     """Legacy files without a task identifier are robot recordings/models."""
     from .acquisition import capture_task, is_custom_capture
 
+    if meta.get("task_type") == "EMG_FOREARM_CAPTURE_V1":
+        from .forearm import TASK, validate_plan
+
+        validate_plan(meta.get("capture_plan"), meta.get("channel_ids"))
+        if (
+            meta.get("classes") != list(TASK.classes)
+            or meta.get("target") != "robot"
+            or meta.get("capture_only") is not True
+        ):
+            raise ValueError("前臂采集类别或用途无效。")
+        return TASK
     if is_custom_capture(meta):
         task = capture_task(meta.get("capture_plan"))
         if (

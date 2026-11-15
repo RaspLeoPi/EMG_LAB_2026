@@ -59,10 +59,9 @@ class StatusPresenter:
             self.collection_notes_button,
         ):
             widget.setEnabled(not task)
-        if hasattr(self, "custom_capture"):
-            self.custom_capture.setEnabled(not task)
-            self.capture_mode.setEnabled(not task)
-            self.task_choice.setEnabled(not task and not self.custom_capture_active())
+        if hasattr(self, "forearm_capture"):
+            self.forearm_capture.setEnabled(not task)
+            self.task_choice.setEnabled(not task and not self.forearm_capture_active())
         self.capture_start.setEnabled(self.backend.device_ready and not task)
         self.capture_stop.setEnabled(capture or pending == "sample")
         self.reject_trial_button.setEnabled(bool(capture))
@@ -192,7 +191,12 @@ class StatusPresenter:
                 widget.setStyleSheet("color:#a33b21;font-weight:600;" if warning else "")
         status = snapshot["capture"]
         self.reject_trial_button.setEnabled(
-            bool(status and not status["done"] and not status.get("rejected"))
+            bool(
+                status
+                and not status["done"]
+                and not status.get("rejected")
+                and (not status.get("protocol_capture") or status["phase"] == "动作")
+            )
         )
         if status:
             if not status.get("capture_only"):
@@ -207,6 +211,11 @@ class StatusPresenter:
                     if status["cue"] < len(self.task.names)
                     else "动作",
                 )
+                if status.get("protocol_capture"):
+                    side = {"left": "左侧", "right": "右侧", "both": "双侧"}[
+                        status["movement_side"]
+                    ]
+                    action = f"{side} · {action}"
                 if status["phase"] == "准备":
                     name = (
                         "休息" if status["cue"] == 0 and not status.get("capture_only") else action
@@ -221,7 +230,11 @@ class StatusPresenter:
                 else:
                     self.cue.setText("休息，放松肌肉")
                 self.capture_status.setText(
-                    f"第 {status['trial']} / {status['trial_count']} 组 · 第 {status['action_index']} / {status.get('action_count', len(self.task.classes))} 个动作 · 剩余 {status['remaining']:.1f} 秒"
+                    (
+                        f"第 {status['trial']} / {status['trial_count']} 次动作 · 第 {status['round_index']} 轮 · 剩余 {status['remaining']:.1f} 秒"
+                        if status.get("protocol_capture")
+                        else f"第 {status['trial']} / {status['trial_count']} 组 · 第 {status['action_index']} / {status.get('action_count', len(self.task.classes))} 个动作 · 剩余 {status['remaining']:.1f} 秒"
+                    )
                     + (
                         " · 保持动作直到倒计时结束"
                         if status["phase"] == "动作"

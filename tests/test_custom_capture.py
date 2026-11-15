@@ -3,7 +3,6 @@
 import csv
 import zipfile
 from copy import deepcopy
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -241,91 +240,3 @@ def test_simulated_device_subprocess_custom_capture_autosaves(tmp_path):
         assert len(index_rows(path)) == 2
     finally:
         service.close()
-
-
-@pytest.fixture
-def window(tmp_path, profile):
-    from PySide6 import QtWidgets as W
-
-    from emg_lab.backend.application import ApplicationService
-    from emg_lab.frontend.window import MainWindow, configure_app
-
-    app = W.QApplication.instance() or W.QApplication([])
-    configure_app(app)
-    service = ApplicationService(tmp_path, local_root=tmp_path / "logs", background=False)
-    service.set_profile(profile)
-    service._device_ready = True  # Deliberate fixture; never create a physical device.
-    service.feed(np.ones((1000, len(profile["channel_ids"])), np.float32))
-    w = MainWindow(tmp_path, backend=service)
-    w.timer.stop()
-    w.select_task("robot")
-    w.tabs.setCurrentIndex(1)
-    w.capture_mode.setCurrentIndex(w.capture_mode.findData("custom"))
-    w.show()
-    app.processEvents()
-    yield w
-    w.close()
-    app.processEvents()
-
-
-def test_robot_page_twenty_conditions_capture_without_scene(window, profile, monkeypatch):
-    from PySide6 import QtWidgets as W
-
-    editor = window.custom_capture
-    editor.set_plan(plan_for(profile))
-    editor.sync_channels()
-    monkeypatch.setattr(window.scene, "start", lambda *a: pytest.fail("Custom capture opened 3D"))
-    window.trial_count.setValue(1)
-    window.action_seconds.setValue(1.2)
-    window.backend.save_notes(window.group.text(), dict(actions="旧机器人命令映射"))
-    window.start_capture()
-    assert not editor.isEnabled() and not window.capture_mode.isEnabled()
-    assert window.backend.task == ROBOT
-    state = window.backend.capture
-    assert state.metadata["capture_only"]
-    assert state.metadata["collection_notes"] == {}
-    window.backend.feed(np.ones((3200, len(profile["channel_ids"])), np.float32))
-    window.tick()
-    assert "动作 0" in window.cue.text() and "重力" in window.capture_status.text()
-    window.backend.feed(np.ones((84000 - 3200, len(profile["channel_ids"])), np.float32))
-    window.backend.poll()
-    W.QApplication.processEvents()
-    assert window.backend.capture is None and editor.isEnabled()
-    assert Path(state.identity).is_file() and len(index_rows(Path(state.identity))) == 20
-    assert "自定义采集" in window.notice.text()
-    window.library.refresh()
-    assert any(e.meta.get("capture_only") for e in window.library.entries)
-    with pytest.raises(ValueError, match="尚未配置"):
-        window.backend.validate_use("train", window.library.entries)
-
-
-def test_editor_single_action_copy_and_plan_roundtrip(window, profile, tmp_path):
-    editor = window.custom_capture
-    changed = []
-    editor.changed.connect(lambda: changed.append(True))
-    editor.operator.setText("P02")
-    assert changed
-    editor.set_plan(plan_for(profile, 20))
-    identity = editor.table.item(7, 1).data(256)
-    editor.mode.setCurrentIndex(1)
-    editor.table.setCurrentCell(7, 1)
-    assert editor.plan()["selected_ids"] == [identity]
-    editor.duplicate_condition()
-    assert editor.table.rowCount() == 21
-    assert editor.table.item(20, 1).data(256) != identity
-    path = tmp_path / "方案.json"
-    window.backend.save_capture_plan(path, editor.plan())
-    restored = window.backend.load_capture_plan(path)
-    editor.set_plan(restored)
-    assert len(editor.selected_ids()) == 1
-    assert editor.plan()["channels"] == restored["channels"]
-    window.backend.save_capture_plan(path, editor.plan())
-    assert window.backend.load_capture_plan(path) == editor.plan()
-    window.trial_count.setValue(7)
-    window.action_seconds.setValue(2.5)
-    window.random_order.setChecked(True)
-    configured = editor.plan()
-    window.trial_count.setValue(1)
-    editor.set_plan(configured)
-    assert window.trial_count.value() == 7 and window.action_seconds.value() == 2.5
-    assert window.random_order.isChecked()

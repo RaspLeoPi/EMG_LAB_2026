@@ -1,3 +1,5 @@
+> Historical protocol: the free-text editor has been replaced by the [standardized forearm workflow](forearm_collection.md). This document describes legacy V1 artifacts, which remain readable.
+
 # 自定义动作采集
 
 机器人实验的“02 采集数据”增加“自定义动作采集（不关联机器人）”。课程预设四类/七类以及灵巧手原流程仍保留，设备收数、滤波、采样时钟、原始信号编码不变。

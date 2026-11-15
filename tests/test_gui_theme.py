@@ -24,12 +24,17 @@ def test_capture_names_remain_visible_and_locked_during_capture(tmp_path, profil
         w.backend._session.feed(np.zeros((1000, 4), dtype=np.float32))
         w.backend._device_ready = True
         app.processEvents()
-        for control in (w.group, w.experiment, w.trial_count, w.action_seconds):
+        for control in (w.group, w.trial_count, w.action_seconds):
             assert control.isVisibleTo(w.page_scrolls["02  采集数据"].widget())
+        w.group.setText("TEST")
+        w.forearm_capture.sync_channels()
+        for row in range(len(profile["channel_ids"])):
+            w.forearm_capture.channels.cellWidget(row, 1).setCurrentIndex(1)
+            w.forearm_capture.channels.cellWidget(row, 2).setCurrentIndex(1)
         w.start_capture()
         app.processEvents()
         assert w.backend._session.capture is not None
-        for control in (w.group, w.experiment, w.trial_count, w.action_seconds):
+        for control in (w.group, w.trial_count, w.action_seconds):
             assert control.isVisibleTo(w.page_scrolls["02  采集数据"].widget())
             assert not control.isEnabled()
     finally:
@@ -48,7 +53,7 @@ def test_essential_fields_do_not_depend_on_advanced_toggles(tmp_path):
             w.select_task(task)
             for index, controls in (
                 (0, (w.device_combo, w.channels, w.bandpass, w.notch, w.waveform.display)),
-                (1, (w.group, w.experiment, w.trial_count, w.action_seconds)),
+                (1, (w.group, w.trial_count, w.action_seconds)),
                 (2, (w.model_name, w.epochs)),
                 (3, (w.models, w.source, w.infer_scene)),
             ):

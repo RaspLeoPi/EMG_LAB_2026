@@ -93,6 +93,8 @@ def test_imported_data_survives_refresh_and_small_window_is_scrollable(window, t
 
 
 def test_capture_waits_for_scene_and_cancel_never_records(window, profile, monkeypatch):
+    window.select_task("hand")
+    window.group.setText("TEST")
     monkeypatch.setattr(window.scene, "start", lambda mode: None)
     window.backend._session.set_profile(profile)
     window.backend._session.feed(np.zeros((1000, 4), dtype=np.float32))
@@ -109,6 +111,8 @@ def test_capture_waits_for_scene_and_cancel_never_records(window, profile, monke
 def test_scene_failure_finalizes_partial_capture(window, profile, monkeypatch):
     from emg_lab.storage import read_recording
 
+    window.select_task("hand")
+    window.group.setText("TEST")
     monkeypatch.setattr(window.scene, "start", lambda mode: None)
     window.backend._session.set_profile(profile)
     window.backend._session.feed(np.zeros((1000, 4), dtype=np.float32))
@@ -207,6 +211,8 @@ def test_capture_completion_belongs_to_service_then_updates_view(window, profile
     window.backend.set_profile(profile)
     window.backend.feed(np.zeros((20, 4), dtype=np.float32))
     window.backend._device_ready = True
+    window.select_task("hand")
+    window.group.setText("TEST")
     window.scene_check.setChecked(False)
     window.trial_count.setValue(1)
     window.action_seconds.setValue(1)

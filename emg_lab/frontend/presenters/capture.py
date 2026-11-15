@@ -9,9 +9,9 @@ class CapturePresenter:
     def start_capture(self):
         if not self.backend.device_ready:
             raise ValueError("请先连接设备。")
-        if self.custom_capture_active():
-            self.custom_capture.sync_channels()
-            self.custom_capture.plan()  # Validate before opening files or starting a run.
+        if self.forearm_capture_active():
+            self.forearm_capture.sync_channels()
+            self.forearm_capture.plan()  # Validate before opening files or starting a run.
             self.begin_capture()
         elif self.scene_check.isChecked():
             self.prepare_scene("sample", self.begin_capture)
@@ -72,30 +72,35 @@ class CapturePresenter:
         trial = capture.status()["trial"]
         reason, ok = W.QInputDialog.getItem(
             self,
-            f"标记第 {trial} 组无效",
-            "原因（原始数据保留，稍后补采一组）",
+            f"标记第 {trial} 次动作无效"
+            if self.forearm_capture_active()
+            else f"标记第 {trial} 组无效",
+            "原因（原始数据保留，可稍后补采）",
             ["动作做错或没跟上", "信号异常或传感器问题", "疲劳 / 其他"],
             0,
             False,
         )
         if ok:
             self.backend.reject_capture_trial(capture, trial, reason)
-            self.message(
-                f"第 {trial} 组已标记无效，训练和基础评估会跳过。采集继续，结束后补采一组。"
-            )
+            self.message(f"第 {trial} 次记录已标记无效，原始信号保留。")
 
     def begin_capture(self):
         try:
+            if self.forearm_capture_active():
+                path = self.backend.start_protocol_capture(self.forearm_capture.plan())
+                self._capture_identity = str(path)
+                self._last_cue = None
+                self.message("采集中，请跟随动作提示；结束后会自动保存。")
+                self.update_controls()
+                self.reveal_activity("02  采集数据", self.cue)
+                return
             path = self.backend.start_capture(
                 self.group.text(),
                 self.experiment.text(),
                 self.trial_count.value(),
                 self.action_seconds.value(),
                 random_order=self.random_order.isChecked(),
-                collection_notes={}
-                if self.custom_capture_active()
-                else self.backend.notes(self.group.text().strip()),
-                capture_plan=self.custom_capture.plan() if self.custom_capture_active() else None,
+                collection_notes=self.backend.notes(self.group.text().strip()),
             )
             self._capture_identity = str(path)
         except Exception:
@@ -124,13 +129,14 @@ class CapturePresenter:
             rejected = len(meta.get("rejected_trials", []))
             self.cue.setText("本次采集已完成" if capture.completed else "本次采集已结束")
             self.capture_status.setText(
-                f"已保存 1 个数据文件，可用 {count} 组动作。"
-                + (f" 标记无效 {rejected} 组，请补采。" if rejected else "")
+                f"已保存 1 个数据文件，可用 {count} "
+                + ("次动作。" if meta.get("task_type") == "EMG_FOREARM_CAPTURE_V1" else "组动作。")
+                + (f" 标记无效 {rejected} 次，请补采。" if rejected else "")
             )
             self.refresh_data()
             if meta.get("capture_only"):
                 self.message(
-                    f"已保存 {count} 轮自定义采集及动作索引 CSV。数据与模型页可查看、导出；暂不用于机器人训练或控制。"
+                    f"已保存 {count} 次动作及索引 CSV。可查看、导出；训练适配留待后续开发。"
                 )
                 self.update_controls()
                 return

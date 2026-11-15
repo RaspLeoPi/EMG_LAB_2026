@@ -44,7 +44,16 @@ def main():
             w.scene_check.setChecked(PHYSICS)
             w.trial_count.setValue(1)
             w.action_seconds.setValue(3.0 if PHYSICS else 1.0)
-            w.capture_start.click()
+            # This regression intentionally exercises legacy labeled training data.
+            # The current forearm UI is collection-only and has separate tests.
+            def legacy_capture():
+                path = w.backend.start_capture("SYNTHETIC", "synthetic-legacy", 1, w.action_seconds.value())
+                w._capture_identity = str(path)
+                w.update_controls()
+            if w.scene_check.isChecked():
+                w.prepare_scene("sample", legacy_capture)
+            else:
+                legacy_capture()
             if PHYSICS:
                 assert w.backend.capture is None
                 w.scene.window.worker.telemetry.connect(

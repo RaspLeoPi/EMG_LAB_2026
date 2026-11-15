@@ -159,17 +159,19 @@ def _existing(root, payload, entries, members, limit):
     return None
 
 
-def _write_archive(payload, destination, title, suffix):
+def _write_archive(payload, destination, title, suffix, basename=None):
     destination = Path(destination)
     if not destination.is_dir():
         raise ValueError("请选择一个已经存在且可写的目标文件夹。")
     # Exclusive creation also protects existing files if two exports race.
     while True:
-        output = destination / f"{safe_name(title)}_{uuid.uuid4().hex[:8]}{suffix}"
+        output = destination / (basename or f"{safe_name(title)}_{uuid.uuid4().hex[:8]}{suffix}")
         try:
             handle = output.open("xb")
             break
         except FileExistsError:
+            if basename is not None:
+                raise ValueError("目标文件已存在，请选择其他文件夹。") from None
             continue
     try:
         with handle, zipfile.ZipFile(handle, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -179,6 +181,15 @@ def _write_archive(payload, destination, title, suffix):
         output.unlink(missing_ok=True)
         raise
     return output
+
+
+def _forearm_basename(meta):
+    if meta.get("task_type") != "EMG_FOREARM_CAPTURE_V1":
+        return None
+    from datetime import datetime
+
+    started = datetime.fromisoformat(meta["batch_started_at"])
+    return f"{safe_name(meta['subject'])}_{started:%Y%m%d_%H%M%S_%f}.emg"
 
 
 def import_recording(source, root, task):
@@ -192,7 +203,7 @@ def import_recording(source, root, task):
         return ImportResult(existing, reused=True)
     destination = Path(root) / safe_name(meta["group"]) / "recordings"
     destination.mkdir(parents=True, exist_ok=True)
-    output = _write_archive(payload, destination, meta["name"], ".emg")
+    output = _write_archive(payload, destination, meta["name"], ".emg", _forearm_basename(meta))
     if meta.get("capture_only"):
         from .capture_index import write_capture_index
 
@@ -202,7 +213,7 @@ def import_recording(source, root, task):
 
 def export_recording(source, destination, task):
     payload, meta = _record_payload(source, task)
-    output = _write_archive(payload, destination, meta["name"], ".emg")
+    output = _write_archive(payload, destination, meta["name"], ".emg", _forearm_basename(meta))
     if meta.get("capture_only"):
         from .capture_index import write_capture_index
 

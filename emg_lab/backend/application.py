@@ -332,6 +332,15 @@ class ApplicationService:
         self._device_ready = self._connecting = False
         self._session.profile = None
 
+    def start_protocol_capture(self, plan):
+        from emg_lab.contracts.forearm import validate_plan
+
+        if self.task.key != "robot":
+            raise ValueError("前臂采集仅在机器人工作区提供。")
+        plan = validate_plan(plan, self.profile["channel_ids"] if self.profile else [])
+        self.stop_scene()
+        return self.start_capture(plan["subject"], plan["subject"], protocol_plan=plan)
+
     def start_capture(self, group, name, trial_count=5, action_s=5, **kwargs):
         if self.training or self.inference:
             raise ValueError("请先结束当前任务。")

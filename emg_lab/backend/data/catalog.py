@@ -286,6 +286,19 @@ def describe(entry):
             + "\n"
         )
         common += f"可用完整动作组：{m.get('usable_trials', 0)}\n"
+    if m.get("task_type") == "EMG_FOREARM_CAPTURE_V1":
+        from emg_lab.contracts.forearm import POSITIONS, SIDES
+
+        plan = m["capture_plan"]
+        common = common.replace("完整动作组", "完整动作次数").replace(" 组（", " 次（")
+        common += f"受试者：{plan['subject']} · 动作侧：{plan['movement_side']}\n"
+        for c in plan["channels"]:
+            common += f"CH {c['channel_id']}：{SIDES[c['side']]} · {POSITIONS[c['position']]}\n"
+        if m.get("migration"):
+            common += "区域标注：由动作响应推断；历史电极几何位置未知。\n"
+            variants = sorted({r["activation_condition"] for r in m["schedule"]})
+            common += "激活条件：" + " / ".join(variants) + "\n"
+        return common + f"编号：{entry.identity}\n位置：{entry.path}"
     if m.get("capture_only"):
         plan = m["capture_plan"]
         common += f"操作者：{plan.get('operator', '')} · 佩戴：{plan.get('wearing', '')}\n备注：{plan.get('notes', '')}\n"
